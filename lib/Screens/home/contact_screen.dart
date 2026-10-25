@@ -20,10 +20,13 @@ class _ContactSelectorState extends State<ContactSelector> {
   String uid = FirebaseAuth.instance.currentUser!.uid;
 
   Future<void> contactFectcher() async {
-    if (await FlutterContacts.requestPermission()) {
+    final PermissionStatus permissionStatus =
+        await FlutterContacts.permissions.request(PermissionType.readWrite);
+    if (permissionStatus == PermissionStatus.granted) {
       // Get all contacts (lightly fetched)
-      ContactList = await FlutterContacts.getContacts(withProperties: true);
-
+      ContactList = await FlutterContacts.getAll(
+        properties: {ContactProperty.phone, ContactProperty.name},
+      );
       setState(() {});
     }
   }
@@ -80,8 +83,7 @@ class _ContactSelectorState extends State<ContactSelector> {
             itemCount: ContactList!.length,
             itemBuilder: (ctx, index) {
               if (ContactList![index].phones.isNotEmpty &&
-                  ContactList![index]
-                      .displayName
+                  (ContactList![index].displayName ?? '')
                       .toLowerCase()
                       .startsWith(SearchController.text.toLowerCase())) {
                 String Phonenumber = ContactList![index]
@@ -93,7 +95,7 @@ class _ContactSelectorState extends State<ContactSelector> {
                   Phonenumber = "+91" + Phonenumber;
                 }
                 return contactTile(
-                  DisplayName: ContactList![index].displayName,
+                  DisplayName: ContactList![index].displayName ?? '',
                   PhoneNumber: Phonenumber,
                   Token: idToken!,
                   uid: uid,

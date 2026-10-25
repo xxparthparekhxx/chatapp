@@ -161,7 +161,7 @@ class _enterPhoneNumberScreeneState extends State<enterPhoneNumberScreene> {
                             : "",
                         style: Theme.of(context)
                             .primaryTextTheme
-                            .headline2!
+                            .titleLarge!
                             .copyWith(fontSize: 40),
                       )
                     ],

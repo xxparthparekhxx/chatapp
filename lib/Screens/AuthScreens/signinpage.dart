@@ -51,7 +51,7 @@ class _SignInPageState extends State<SignInPage> {
         });
       },
       codeSent: (String verificationId, int? resendToken) {
-        print(verificationId);
+        // TODO: replace with proper logging
         ScreenMaster.animateToPage(
           2,
           duration: const Duration(milliseconds: 500),
@@ -62,7 +62,7 @@ class _SignInPageState extends State<SignInPage> {
         });
       },
       codeAutoRetrievalTimeout: (String verificationId) {
-        print("auto retrival time out");
+        // TODO: replace with proper logging
       },
     );
   }

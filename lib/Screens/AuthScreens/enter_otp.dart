@@ -54,11 +54,11 @@ class _EnterOtpState extends State<EnterOtp> {
                 children: [
                   Text(
                     "Enter The ",
-                    style: Theme.of(context).primaryTextTheme.headline1,
+                    style: Theme.of(context).primaryTextTheme.displayLarge,
                   ),
                   Text(
                     "OTP",
-                    style: Theme.of(context).primaryTextTheme.headline2,
+                    style: Theme.of(context).primaryTextTheme.titleLarge,
                   )
                 ],
               )
@@ -76,7 +76,7 @@ class _EnterOtpState extends State<EnterOtp> {
                       OTP,
                       style: Theme.of(context)
                           .primaryTextTheme
-                          .headline2!
+                          .titleLarge!
                           .copyWith(fontSize: 40),
                     )
                   ],

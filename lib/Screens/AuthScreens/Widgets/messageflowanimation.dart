@@ -40,7 +40,7 @@ class _MyHomePageState extends State<MyHomePage>
       _counter = !_counter;
       if (BoxColor == Colors.orange) {
         BoxColor = Theme.of(context).canvasColor;
-        Textcolor = Theme.of(context).textTheme.bodyText1!.color!;
+        Textcolor = Theme.of(context).textTheme.bodyLarge!.color!;
       } else if (BoxColor == Colors.white) {
         BoxColor = Colors.orange;
         Textcolor = Colors.orange;

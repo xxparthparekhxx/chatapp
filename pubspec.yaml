@@ -18,7 +18,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 version: 1.0.1+2
 
 environment:
-  sdk: ">=2.15.0-116.0.dev <3.0.0"
+  sdk: ">=3.0.0 <4.0.0"
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions
@@ -29,30 +29,30 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  firebase_core: ^2.24.2
-  firebase_auth: ^4.16.0
-  firebase_messaging: ^14.7.10
-  http: ^0.13.4
-  image_picker: ^0.8.4+4
-  flutter_contacts: ^1.1.7+1
+  firebase_core: ^5.1.0
+  firebase_auth: ^7.0.1
+  firebase_messaging: ^17.0.1
+  http: ^1.6.0
+  image_picker: ^1.2.4
+  flutter_contacts: ^2.6.0
   shared_preferences: ^2.0.12
-  cached_network_image: ^3.3.1
-  intl: ^0.17.0
+  cached_network_image: ^4.0.5
+  intl: ^0.20.3
   video_player: ^2.2.14
-  share_plus: ^4.0.10
+  share_plus: ^13.3.1
   provider: ^6.0.3
+  image_cropper: ^13.0.0
 
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  image_cropper:
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
   # activated in the `analysis_options.yaml` file located at the root of your
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
-  flutter_lints: ^1.0.0
+  flutter_lints: ^6.0.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

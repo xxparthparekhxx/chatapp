@@ -11,8 +11,11 @@ class ContactCollector extends StatefulWidget {
 
 class _ContactCollectorState extends State<ContactCollector> {
   void getcontacts() async {
-    if (await FlutterContacts.requestPermission()) widget.Updater();
-    // Get all contacts (lightly fetched)
+    final PermissionStatus permissionStatus =
+        await FlutterContacts.permissions.request(PermissionType.readWrite);
+    if (permissionStatus == PermissionStatus.granted) {
+      widget.Updater();
+    }
   }
 
   @override
