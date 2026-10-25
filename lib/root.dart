@@ -14,17 +14,17 @@ class MainApp extends StatefulWidget {
 
 class MainAppState extends State<MainApp> {
   SharedPreferences? prefs;
-  ThemeMode CurrentTheme = ThemeMode.system;
+  ThemeMode currentTheme = ThemeMode.system;
   void getSavedThemeMode() async {
     prefs = await SharedPreferences.getInstance();
     String? userTheme = prefs!.getString("CurrentTheme");
 
     if (userTheme == null) {
-      CurrentTheme = ThemeMode.system;
+      currentTheme = ThemeMode.system;
     } else if (userTheme == "l") {
-      CurrentTheme = ThemeMode.light;
+      currentTheme = ThemeMode.light;
     } else if (userTheme == 'd') {
-      CurrentTheme = ThemeMode.dark;
+      currentTheme = ThemeMode.dark;
     }
     setState(() {});
   }
@@ -37,7 +37,7 @@ class MainAppState extends State<MainApp> {
 
   void updateTheme(ThemeMode mode) async {
     setState(() {
-      CurrentTheme = mode;
+      currentTheme = mode;
     });
     String theme = '';
     if (mode == ThemeMode.light) {
@@ -57,22 +57,22 @@ class MainAppState extends State<MainApp> {
             brightness: Brightness.light,
             primarySwatch: Colors.orange,
             primaryTextTheme: const TextTheme(
-                headline1: TextStyle(
+                displayLarge: TextStyle(
                     fontSize: 24,
                     color: Colors.black,
                     fontWeight: FontWeight.bold),
-                headline2: TextStyle(fontSize: 24, color: Colors.orange))),
+                titleLarge: TextStyle(fontSize: 24, color: Colors.orange))),
         /* light theme settings */
 
         darkTheme: ThemeData(
             brightness: Brightness.dark,
             primarySwatch: Colors.orange,
             primaryTextTheme: const TextTheme(
-                headline1: TextStyle(
+                displayLarge: TextStyle(
                     fontSize: 24,
                     color: Colors.black,
                     fontWeight: FontWeight.bold),
-                headline2: TextStyle(fontSize: 24, color: Colors.orange)),
+                titleLarge: TextStyle(fontSize: 24, color: Colors.orange)),
             /* dark theme settings */
             appBarTheme: const AppBarTheme(
                 color: Colors.orange,
@@ -80,25 +80,25 @@ class MainAppState extends State<MainApp> {
                     color: Colors.black,
                     fontWeight: FontWeight.bold,
                     fontSize: 24))),
-        themeMode: CurrentTheme,
-        home: loginflow(ThemeSetter: updateTheme, ct: CurrentTheme));
+        themeMode: currentTheme,
+        home: LoginFlow(themeSetter: updateTheme, ct: currentTheme));
   }
 }
 
-class loginflow extends StatefulWidget {
-  final Function ThemeSetter;
+class LoginFlow extends StatefulWidget {
+  final Function themeSetter;
   final ThemeMode ct;
-  const loginflow({Key? key, required this.ThemeSetter, required this.ct})
+  const LoginFlow({Key? key, required this.themeSetter, required this.ct})
       : super(key: key);
 
   @override
-  loginflowState createState() => loginflowState();
+  LoginFlowState createState() => LoginFlowState();
 }
 
-class loginflowState extends State<loginflow> {
+class LoginFlowState extends State<LoginFlow> {
   FirebaseAuth auth = FirebaseAuth.instance;
   User? x;
-  uManager? Settings;
+  uManager? settings;
 
   @override
   Widget build(BuildContext context) {
@@ -106,7 +106,7 @@ class loginflowState extends State<loginflow> {
       if (user != null && x == null) {
         setState(() {
           x = user;
-          Settings = uManager(person: user, auth: auth);
+          settings = uManager(person: user, auth: auth);
         });
       } else if (user == null && x != null) {
         setState(() {
@@ -118,8 +118,8 @@ class loginflowState extends State<loginflow> {
         body: x != null
             ? loggedinPage(
                 profile: x!,
-                Settings: Settings!,
-                ThemeSetter: widget.ThemeSetter,
+                Settings: settings!,
+                ThemeSetter: widget.themeSetter,
                 ct: widget.ct,
                 updatehome: () {},
               )

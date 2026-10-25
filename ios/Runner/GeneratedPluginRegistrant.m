@@ -36,20 +36,14 @@
 @import image_cropper;
 #endif
 
-#if __has_include(<image_picker_ios/FLTImagePickerPlugin.h>)
-#import <image_picker_ios/FLTImagePickerPlugin.h>
+#if __has_include(<image_picker_ios/ImagePickerPlugin.h>)
+#import <image_picker_ios/ImagePickerPlugin.h>
 #else
 @import image_picker_ios;
 #endif
 
-#if __has_include(<path_provider_foundation/PathProviderPlugin.h>)
-#import <path_provider_foundation/PathProviderPlugin.h>
-#else
-@import path_provider_foundation;
-#endif
-
-#if __has_include(<share_plus/FLTSharePlusPlugin.h>)
-#import <share_plus/FLTSharePlusPlugin.h>
+#if __has_include(<share_plus/FPPSharePlusPlugin.h>)
+#import <share_plus/FPPSharePlusPlugin.h>
 #else
 @import share_plus;
 #endif
@@ -60,20 +54,14 @@
 @import shared_preferences_foundation;
 #endif
 
-#if __has_include(<sqflite/SqflitePlugin.h>)
-#import <sqflite/SqflitePlugin.h>
+#if __has_include(<sqflite_darwin/SqflitePlugin.h>)
+#import <sqflite_darwin/SqflitePlugin.h>
 #else
-@import sqflite;
+@import sqflite_darwin;
 #endif
 
-#if __has_include(<url_launcher_ios/URLLauncherPlugin.h>)
-#import <url_launcher_ios/URLLauncherPlugin.h>
-#else
-@import url_launcher_ios;
-#endif
-
-#if __has_include(<video_player_avfoundation/FVPVideoPlayerPlugin.h>)
-#import <video_player_avfoundation/FVPVideoPlayerPlugin.h>
+#if __has_include(<video_player_avfoundation/VideoPlayerPlugin.h>)
+#import <video_player_avfoundation/VideoPlayerPlugin.h>
 #else
 @import video_player_avfoundation;
 #endif
@@ -86,13 +74,11 @@
   [FLTFirebaseMessagingPlugin registerWithRegistrar:[registry registrarForPlugin:@"FLTFirebaseMessagingPlugin"]];
   [FlutterContactsPlugin registerWithRegistrar:[registry registrarForPlugin:@"FlutterContactsPlugin"]];
   [FLTImageCropperPlugin registerWithRegistrar:[registry registrarForPlugin:@"FLTImageCropperPlugin"]];
-  [FLTImagePickerPlugin registerWithRegistrar:[registry registrarForPlugin:@"FLTImagePickerPlugin"]];
-  [PathProviderPlugin registerWithRegistrar:[registry registrarForPlugin:@"PathProviderPlugin"]];
-  [FLTSharePlusPlugin registerWithRegistrar:[registry registrarForPlugin:@"FLTSharePlusPlugin"]];
+  [ImagePickerPlugin registerWithRegistrar:[registry registrarForPlugin:@"ImagePickerPlugin"]];
+  [FPPSharePlusPlugin registerWithRegistrar:[registry registrarForPlugin:@"FPPSharePlusPlugin"]];
   [SharedPreferencesPlugin registerWithRegistrar:[registry registrarForPlugin:@"SharedPreferencesPlugin"]];
   [SqflitePlugin registerWithRegistrar:[registry registrarForPlugin:@"SqflitePlugin"]];
-  [URLLauncherPlugin registerWithRegistrar:[registry registrarForPlugin:@"URLLauncherPlugin"]];
-  [FVPVideoPlayerPlugin registerWithRegistrar:[registry registrarForPlugin:@"FVPVideoPlayerPlugin"]];
+  [VideoPlayerPlugin registerWithRegistrar:[registry registrarForPlugin:@"VideoPlayerPlugin"]];
 }
 
 @end
