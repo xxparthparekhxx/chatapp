@@ -2,11 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:baata/consts.dart';
-import 'package:baata/providers/auth.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:http/http.dart' as http;
-import 'package:provider/provider.dart';
 
 enum UserStates {
   existing,
@@ -35,6 +32,7 @@ class uManager {
     idtoken = await FirebaseAuth.instance.currentUser!.getIdToken() ?? "";
 
     http.Response? res;
+    int attempts = 0;
     while (res == null || res.statusCode != 200) {
       try {
         res = await rw(
@@ -43,7 +41,16 @@ class uManager {
         );
 
         await Future.delayed(const Duration(seconds: 1));
-      } catch (e) {}
+      } catch (e) {
+        print("userDetails error: $e");
+        attempts++;
+        if (attempts >= 5) break;
+      }
+    }
+
+    if (res == null) {
+      yield UserStates.newUser;
+      return;
     }
 
     var userdata = jsonDecode(res.body);

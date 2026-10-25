@@ -60,8 +60,8 @@ class _UserHomeState extends State<UserHome> {
           Future.delayed(const Duration(seconds: 1));
         }
       } catch (e) {
-        print(e);
-        Future.delayed(const Duration(seconds: 1));
+        // TODO: replace with proper logging
+        await Future.delayed(const Duration(seconds: 1));
       }
     }
   }

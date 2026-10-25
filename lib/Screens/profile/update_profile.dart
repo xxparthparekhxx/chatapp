@@ -1,8 +1,8 @@
 import 'dart:io';
 import 'package:baata/consts.dart';
+import 'package:baata/Settings/image_crop_helper.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 
@@ -28,41 +28,9 @@ enum AppState {
 
 class _UpdatePfpState extends State<UpdatePfp> {
   void _cropImage() async {
-    CroppedFile? croppedFile = (await ImageCropper().cropImage(
-      sourcePath: imgPath!,
-      aspectRatioPresets: Platform.isAndroid
-          ? [
-              CropAspectRatioPreset.square,
-              CropAspectRatioPreset.ratio3x2,
-              CropAspectRatioPreset.original,
-              CropAspectRatioPreset.ratio4x3,
-              CropAspectRatioPreset.ratio16x9
-            ]
-          : [
-              CropAspectRatioPreset.original,
-              CropAspectRatioPreset.square,
-              CropAspectRatioPreset.ratio3x2,
-              CropAspectRatioPreset.ratio4x3,
-              CropAspectRatioPreset.ratio5x3,
-              CropAspectRatioPreset.ratio5x4,
-              CropAspectRatioPreset.ratio7x5,
-              CropAspectRatioPreset.ratio16x9
-            ],
-      uiSettings: [
-        AndroidUiSettings(
-            toolbarTitle: 'Resize your image',
-            toolbarColor: Colors.orange,
-            toolbarWidgetColor: Colors.white,
-            initAspectRatio: CropAspectRatioPreset.original,
-            lockAspectRatio: false,
-            showCropGrid: false),
-        IOSUiSettings(
-          title: 'Resize Your Image',
-        )
-      ],
-    ));
-    if (croppedFile != null) {
-      imgPath = croppedFile.path;
+    final croppedPath = await cropImage(imgPath!);
+    if (croppedPath != null) {
+      imgPath = croppedPath;
       setState(() {});
     }
   }

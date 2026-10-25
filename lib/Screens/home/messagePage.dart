@@ -28,7 +28,7 @@ class MessagePage extends StatefulWidget {
       required this.Token})
       : super(key: key) {
     messageId = (message['_id']);
-    print(message);
+    // TODO: replace with proper logging
   }
 
   @override
@@ -224,6 +224,7 @@ class _MessagePageState extends State<MessagePage> {
             curve: Curves.ease, duration: const Duration(milliseconds: 10));
         await Future.delayed(const Duration(milliseconds: 20));
       } catch (e) {
+        // Stop scrolling if the controller throws (e.g. disposed mid-scroll)
         break;
       }
     }

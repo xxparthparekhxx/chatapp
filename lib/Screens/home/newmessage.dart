@@ -25,11 +25,11 @@ class _newMessageStartState extends State<newMessageStart> {
   TextEditingController Message = TextEditingController();
 
   void GetMessages() async {
-    print('getMessages');
+    // TODO: replace with proper logging
     var data = await get(
         Uri.parse('${URL}GetChatFromUid/uid=${widget.data['uid']}'),
         headers: {"jwt": widget.Token});
-    print(data.body);
+    // TODO: replace with proper logging
 
     if (data.body == "notFound") {
       chatState = 'New';
@@ -82,7 +82,7 @@ class _newMessageStartState extends State<newMessageStart> {
 
   @override
   Widget build(BuildContext context) {
-    print(chatid);
+    // TODO: replace with proper logging
     return Scaffold(
         appBar: AppBar(
             title: Row(mainAxisAlignment: MainAxisAlignment.start, children: [

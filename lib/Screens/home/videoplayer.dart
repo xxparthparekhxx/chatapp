@@ -140,7 +140,7 @@ class _VideoAppState extends State<VideoApp> {
                                         await _controller.pause();
                                         Duration? pos =
                                             await _controller.position;
-                                        print(pos.toString());
+                                        // TODO: replace with proper logging
                                         await _controller.seekTo(
                                             pos! + const Duration(seconds: 10));
                                         await _controller.play();
