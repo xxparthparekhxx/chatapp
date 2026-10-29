@@ -72,7 +72,6 @@ class _newMessageStartState extends State<newMessageStart> {
         headers: {"jwt": widget.Token},
         body: jsonEncode({
           "id": id,
-          "Sender": selfUid,
           "messageTime": DateTime.now().millisecondsSinceEpoch,
           "MessageText": textmessage,
           "isMedia": isMedia
@@ -150,7 +149,6 @@ class _newMessageStartState extends State<newMessageStart> {
                             if (chatid == null) {
                               StartMessaging({
                                 "contactUid": widget.data['uid'],
-                                "selfUid": selfUid,
                                 "ismedia": false,
                                 "messageText": Message.text
                               });

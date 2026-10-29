@@ -85,7 +85,6 @@ class _MessagePageState extends State<MessagePage> {
         headers: {"jwt": widget.Token},
         body: jsonEncode({
           "id": id,
-          "Sender": selfUid,
           "messageTime": DateTime.now().millisecondsSinceEpoch,
           "MessageText": textmessage,
           "isMedia": isMedia
@@ -98,7 +97,6 @@ class _MessagePageState extends State<MessagePage> {
       return displayphoto(
         image: image,
         chatid: widget.messageId,
-        selfuid: selfUid,
         token: widget.Token,
       );
     })).then((value) => UpdateMessagesWithId(widget.messageId));
@@ -125,7 +123,6 @@ class _MessagePageState extends State<MessagePage> {
     };
     final Map<String, Object> meta = {
       "id": id,
-      "Sender": selfUid,
       "messageTime": DateTime.now().millisecondsSinceEpoch,
       "MessageText": Message.text,
       "isMedia": true,

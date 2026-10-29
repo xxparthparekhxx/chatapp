@@ -10,13 +10,11 @@ import 'package:image_picker/image_picker.dart';
 class displayphoto extends StatefulWidget {
   XFile image;
   String chatid;
-  String selfuid;
   String token;
   displayphoto(
       {Key? key,
       required this.image,
       required this.chatid,
-      required this.selfuid,
       required this.token})
       : super(key: key);
 
@@ -47,7 +45,6 @@ class _displayphotoState extends State<displayphoto> {
     };
     Map<String, Object> meta = {
       "id": id,
-      "Sender": widget.selfuid,
       "messageTime": DateTime.now().millisecondsSinceEpoch,
       "MessageText": Message.text,
       "isMedia": true,
