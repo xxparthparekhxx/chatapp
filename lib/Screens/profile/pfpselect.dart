@@ -48,7 +48,7 @@ class _PfpState extends State<Pfp> {
       "jwt": Provider.of<Auth>(context, listen: false).token!
     };
     request.files.add(http.MultipartFile(
-        'image', imageFile!.readAsBytes().asStream(), imageFile!.lengthSync(),
+        'image', imageFile!.openRead(), await imageFile!.length(),
         filename: widget.userName +
             "|||DeLimitMe|||" +
             imageFile!.path.split('/').last.split('.').last));

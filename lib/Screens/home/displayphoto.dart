@@ -55,7 +55,7 @@ class _displayphotoState extends State<displayphoto> {
     };
     request.fields['data'] = jsonEncode(meta);
     request.files.add(http.MultipartFile(
-        'image', Image.readAsBytes().asStream(), Image.lengthSync(),
+        'image', Image.openRead(), await Image.length(),
         filename: ''));
 
     request.headers.addAll(headers);

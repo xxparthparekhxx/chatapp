@@ -133,7 +133,7 @@ class _MessagePageState extends State<MessagePage> {
     };
     request.fields['data'] = jsonEncode(meta);
     request.files.add(http.MultipartFile(
-        'video', video.readAsBytes().asStream(), video.lengthSync(),
+        'video', video.openRead(), await video.length(),
         filename: video.path.split("/").last.split(".").last));
 
     request.headers.addAll(headers);

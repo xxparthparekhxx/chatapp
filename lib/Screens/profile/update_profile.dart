@@ -247,10 +247,11 @@ class _UpdatePfpState extends State<UpdatePfp> {
 
                         request.fields['data'] = jsonEncode(data);
                         if (imgPath != null) {
+                          final imageFile = File(imgPath!);
                           request.files.add(http.MultipartFile(
                               'image',
-                              File(imgPath!).readAsBytes().asStream(),
-                              File(imgPath!).lengthSync(),
+                              imageFile.openRead(),
+                              await imageFile.length(),
                               filename: ''));
                         }
                         request.headers.addAll(headers);
