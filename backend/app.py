@@ -2,6 +2,7 @@ import os
 import io
 import json
 import uuid
+import logging
 import sqlite3
 from datetime import datetime
 from functools import wraps
@@ -20,7 +21,8 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 app = Flask(__name__)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
-app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100 MB uploads
+# Deliberately no MAX_CONTENT_LENGTH: uploads must support any file size and
+# are streamed straight to disk with file.save().
 
 CORS(app)  # allow Flutter app (any origin) to call the backend
 
@@ -93,8 +95,70 @@ init_db()
 
 
 # ---------------------------------------------------------------------------
-# Auth helper (dev: accept any non-empty jwt)
+# Auth helpers
 # ---------------------------------------------------------------------------
+DEV_INSECURE_AUTH_ENV = "BAATA_DEV_INSECURE_AUTH"
+
+try:
+    import firebase_admin
+    from firebase_admin import auth as firebase_auth
+    from firebase_admin import credentials as firebase_credentials
+except ImportError:  # firebase-admin is only required outside insecure dev mode
+    firebase_admin = None
+    firebase_auth = None
+    firebase_credentials = None
+
+
+def _init_firebase_auth():
+    """Initialise Firebase Admin SDK ID-token verification.
+
+    Returns True when Firebase token verification is enabled, False when
+    running in insecure dev mode (BAATA_DEV_INSECURE_AUTH=1), and refuses to
+    start when no credentials are available.
+    """
+    logging.basicConfig(level=logging.INFO)
+    if os.environ.get(DEV_INSECURE_AUTH_ENV) == "1":
+        logging.getLogger(__name__).warning(
+            "*** BAATA_DEV_INSECURE_AUTH=1: insecure dev auth mode is ON. "
+            "Any non-empty token is accepted and no Firebase ID-token "
+            "verification happens. Never use this in production. ***"
+        )
+        return False
+
+    if firebase_admin is None:
+        raise SystemExit(
+            "firebase-admin is not installed: run 'pip install -r "
+            "requirements.txt' (or set BAATA_DEV_INSECURE_AUTH=1 for insecure "
+            "local development)."
+        )
+
+    cred_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+    if not cred_path or not os.path.isfile(cred_path):
+        raise SystemExit(
+            "Baata requires Firebase Admin credentials to verify ID tokens: "
+            "point GOOGLE_APPLICATION_CREDENTIALS at a service-account JSON "
+            "file (or set BAATA_DEV_INSECURE_AUTH=1 for insecure local "
+            "development)."
+        )
+
+    firebase_admin.initialize_app(firebase_credentials.Certificate(cred_path))
+    return True
+
+
+FIREBASE_AUTH_ENABLED = _init_firebase_auth()
+
+
+def verify_firebase_token(token):
+    """Verify a Firebase ID token and return its claims, or None when invalid."""
+    if firebase_auth is None:
+        return None
+    try:
+        return firebase_auth.verify_id_token(token)
+    except Exception:
+        logging.getLogger(__name__).warning("Firebase ID-token verification failed")
+        return None
+
+
 def get_jwt():
     """Extract jwt from header, query param, or URL path parameter."""
     jwt = request.headers.get("jwt") or request.args.get("jwt")
@@ -104,10 +168,55 @@ def get_jwt():
 
 
 def get_user_by_jwt(create_if_missing=True):
-    """Return the user Row for the current jwt. Optionally create on first use."""
+    """Return the user Row for the current request's token.
+
+    With Firebase verification enabled, the token is a Firebase ID token: it
+    is verified and the user identity comes from the token's uid (and phone
+    number when present). In insecure dev mode the legacy behaviour of keying
+    users by the raw token string is kept.
+    """
     jwt = get_jwt()
     if not jwt:
         return None
+
+    if FIREBASE_AUTH_ENABLED:
+        claims = verify_firebase_token(jwt)
+        if claims is None:
+            return None
+        uid = claims.get("uid") or ""
+        phone = claims.get("phone_number") or ""
+        if not uid:
+            return None
+        conn = get_db()
+        try:
+            row = conn.execute(
+                "SELECT * FROM users WHERE firebase_uid = ?", (uid,)
+            ).fetchone()
+            if row is None and phone:
+                row = conn.execute(
+                    "SELECT * FROM users WHERE phone_number = ?", (phone,)
+                ).fetchone()
+            if row is None and create_if_missing:
+                user_id = str(uuid.uuid4())
+                now = datetime.utcnow().isoformat()
+                conn.execute(
+                    "INSERT INTO users (id, firebase_uid, phone_number, created_at) "
+                    "VALUES (?, ?, ?, ?)",
+                    (user_id, uid, phone, now),
+                )
+                conn.commit()
+                row = conn.execute(
+                    "SELECT * FROM users WHERE id = ?", (user_id,)
+                ).fetchone()
+            elif row is not None and not row["firebase_uid"]:
+                conn.execute(
+                    "UPDATE users SET firebase_uid = ? WHERE id = ?", (uid, row["id"])
+                )
+            return row
+        finally:
+            conn.close()
+
+    # Insecure dev mode: legacy behaviour, keyed by the raw token string.
     conn = get_db()
     try:
         row = conn.execute("SELECT * FROM users WHERE jwt_token = ?", (jwt,)).fetchone()
@@ -145,8 +254,11 @@ def get_user_by_uid(uid):
 def require_jwt(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        if not get_jwt():
+        jwt = get_jwt()
+        if not jwt:
             return jsonify({"error": "missing jwt"}), 401
+        if FIREBASE_AUTH_ENABLED and verify_firebase_token(jwt) is None:
+            return jsonify({"error": "invalid token"}), 401
         return f(*args, **kwargs)
 
     return decorated
