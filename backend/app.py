@@ -1,13 +1,15 @@
 import os
 import io
+import re
 import json
 import uuid
+import base64
 import logging
 import sqlite3
 from datetime import datetime
 from functools import wraps
 
-from flask import Flask, request, jsonify, send_file, send_from_directory, Response
+from flask import Flask, request, jsonify, send_file, send_from_directory, Response, g
 from flask_cors import CORS
 
 # ---------------------------------------------------------------------------
@@ -125,6 +127,15 @@ def _init_firebase_auth():
         )
         return False
 
+    if os.environ.get("FIREBASE_AUTH_EMULATOR_HOST"):
+        # firebase-admin skips the signature check for every ID token when
+        # this is set, so anyone could forge a token for any uid.
+        raise SystemExit(
+            "FIREBASE_AUTH_EMULATOR_HOST is set: firebase-admin would accept "
+            "unsigned ID tokens. Unset it, or set BAATA_DEV_INSECURE_AUTH=1 "
+            "for insecure local development."
+        )
+
     if firebase_admin is None:
         raise SystemExit(
             "firebase-admin is not installed: run 'pip install -r "
@@ -167,71 +178,120 @@ def get_jwt():
     return jwt
 
 
-def get_user_by_jwt(create_if_missing=True):
-    """Return the user Row for the current request's token.
+def _insecure_dev_claims(token):
+    """Insecure dev mode only: read the token's claims WITHOUT verifying it.
 
-    With Firebase verification enabled, the token is a Firebase ID token: it
-    is verified and the user identity comes from the token's uid (and phone
-    number when present). In insecure dev mode the legacy behaviour of keying
-    users by the raw token string is kept.
+    A Firebase ID token's payload is decoded so the uid stays stable across
+    the client's hourly token refresh; any other string is used as the uid.
     """
-    jwt = get_jwt()
-    if not jwt:
-        return None
-
-    if FIREBASE_AUTH_ENABLED:
-        claims = verify_firebase_token(jwt)
-        if claims is None:
-            return None
-        uid = claims.get("uid") or ""
-        phone = claims.get("phone_number") or ""
-        if not uid:
-            return None
-        conn = get_db()
+    parts = token.split(".")
+    if len(parts) == 3:
         try:
+            payload = parts[1] + "=" * (-len(parts[1]) % 4)
+            claims = json.loads(base64.urlsafe_b64decode(payload))
+        except ValueError:
+            claims = None
+        if isinstance(claims, dict):
+            uid = claims.get("sub") or claims.get("user_id")
+            if isinstance(uid, str) and uid:
+                return {"uid": uid, "phone_number": claims.get("phone_number")}
+    return {"uid": token}
+
+
+def authenticate(token):
+    """Return (uid, phone_number) for a token, or None when it is invalid.
+
+    This is the only source of the caller's identity: uid and phone number
+    come from the verified Firebase ID token (its unverified claims in
+    insecure dev mode), never from request fields.
+    """
+    if FIREBASE_AUTH_ENABLED:
+        claims = verify_firebase_token(token)
+    else:
+        claims = _insecure_dev_claims(token)
+    if not isinstance(claims, dict):
+        return None
+    uid = claims.get("uid")
+    if not isinstance(uid, str) or not uid:
+        return None
+    phone = claims.get("phone_number")
+    return uid, phone if isinstance(phone, str) else ""
+
+
+def _load_or_create_user(uid, phone):
+    """Return the users row owned by this Firebase uid, creating it if needed."""
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT * FROM users WHERE firebase_uid = ?", (uid,)
+        ).fetchone()
+        if row is None and phone:
+            # Adopt an unclaimed (legacy) row with this phone number, but
+            # never a row that already belongs to a different Firebase uid.
             row = conn.execute(
-                "SELECT * FROM users WHERE firebase_uid = ?", (uid,)
+                "SELECT * FROM users WHERE phone_number = ? "
+                "AND (firebase_uid IS NULL OR firebase_uid = '')",
+                (phone,),
             ).fetchone()
-            if row is None and phone:
-                row = conn.execute(
-                    "SELECT * FROM users WHERE phone_number = ?", (phone,)
-                ).fetchone()
-            if row is None and create_if_missing:
-                user_id = str(uuid.uuid4())
-                now = datetime.utcnow().isoformat()
-                conn.execute(
-                    "INSERT INTO users (id, firebase_uid, phone_number, created_at) "
-                    "VALUES (?, ?, ?, ?)",
-                    (user_id, uid, phone, now),
-                )
-                conn.commit()
-                row = conn.execute(
-                    "SELECT * FROM users WHERE id = ?", (user_id,)
-                ).fetchone()
-            elif row is not None and not row["firebase_uid"]:
+            if row is not None:
                 conn.execute(
                     "UPDATE users SET firebase_uid = ? WHERE id = ?", (uid, row["id"])
                 )
-            return row
-        finally:
-            conn.close()
-
-    # Insecure dev mode: legacy behaviour, keyed by the raw token string.
-    conn = get_db()
-    try:
-        row = conn.execute("SELECT * FROM users WHERE jwt_token = ?", (jwt,)).fetchone()
-        if row is None and create_if_missing:
-            uid = str(uuid.uuid4())
+                conn.commit()
+                row = conn.execute(
+                    "SELECT * FROM users WHERE id = ?", (row["id"],)
+                ).fetchone()
+        if row is None:
+            user_id = str(uuid.uuid4())
             now = datetime.utcnow().isoformat()
             conn.execute(
-                "INSERT INTO users (id, jwt_token, created_at) VALUES (?, ?, ?)",
-                (uid, jwt, now),
+                "INSERT INTO users (id, firebase_uid, phone_number, created_at) "
+                "VALUES (?, ?, ?, ?)",
+                (user_id, uid, phone, now),
             )
             conn.commit()
-            row = conn.execute("SELECT * FROM users WHERE jwt_token = ?", (jwt,)).fetchone()
+            row = conn.execute(
+                "SELECT * FROM users WHERE id = ?", (user_id,)
+            ).fetchone()
         return row
     finally:
         conn.close()
+
+
+def current_user():
+    """The authenticated caller's users row (set by require_jwt)."""
+    return g.user
+
+
+def caller_ids():
+    """Ids that identify the caller as a chat participant: the verified
+    Firebase uid, plus the internal user id used by older chat rows."""
+    return {x for x in (g.uid, g.user["id"]) if x}
+
+
+def load_own_chat(conn, chat_id):
+    """Return (chat, None) when the caller takes part in chat_id, else
+    (None, error_response): 400 bad id, 404 no such chat, 403 not yours."""
+    if not isinstance(chat_id, str) or not chat_id:
+        return None, (jsonify({"error": "missing chat id"}), 400)
+    chat = conn.execute("SELECT * FROM chats WHERE chat_id = ?", (chat_id,)).fetchone()
+    if chat is None:
+        return None, (jsonify({"error": "chat not found"}), 404)
+    ids = caller_ids()
+    if chat["u1"] not in ids and chat["u2"] not in ids:
+        return None, (jsonify({"error": "forbidden"}), 403)
+    return chat, None
+
+
+_SAFE_EXT = re.compile(r"[A-Za-z0-9]{1,10}")
+
+
+def upload_path(prefix, filename, default_ext):
+    """Server-chosen path for an upload; only a validated extension is kept
+    from the client's file name."""
+    ext = filename.rsplit(".", 1)[-1] if filename and "." in filename else ""
+    ext = ext.lower() if _SAFE_EXT.fullmatch(ext) else default_ext
+    return os.path.join(UPLOAD_FOLDER, f"{prefix}_{uuid.uuid4().hex}.{ext}")
 
 
 def get_user_by_uid(uid):
@@ -257,8 +317,11 @@ def require_jwt(f):
         jwt = get_jwt()
         if not jwt:
             return jsonify({"error": "missing jwt"}), 401
-        if FIREBASE_AUTH_ENABLED and verify_firebase_token(jwt) is None:
+        identity = authenticate(jwt)
+        if identity is None:
             return jsonify({"error": "invalid token"}), 401
+        g.uid, phone = identity
+        g.user = _load_or_create_user(g.uid, phone)
         return f(*args, **kwargs)
 
     return decorated
@@ -305,7 +368,7 @@ def serve_file_or_placeholder(file_path, mimetype):
 @app.route("/profile/uudetails", methods=["POST"])
 @require_jwt
 def profile_uudetails():
-    user = get_user_by_jwt(create_if_missing=True)
+    user = current_user()
     if user and user["name"]:
         return jsonify(
             {
@@ -322,7 +385,7 @@ def profile_uudetails():
 @app.route("/profile/Getname", methods=["POST"])
 @require_jwt
 def profile_getname():
-    user = get_user_by_jwt(create_if_missing=True)
+    user = current_user()
     name = user["name"] if (user and user["name"]) else ""
     return Response(name, mimetype="text/plain")
 
@@ -331,17 +394,18 @@ def profile_getname():
 @app.route("/profile/getMessage/metadata/jwt=<jwt>", methods=["GET"])
 @require_jwt
 def profile_get_message_metadata(jwt):
-    user = get_user_by_jwt(create_if_missing=True)
-    me = user["id"]
+    me = sorted(caller_ids())
+    marks = ", ".join("?" for _ in me)
     conn = get_db()
     try:
         rows = conn.execute(
-            "SELECT * FROM chats WHERE u1 = ? OR u2 = ? ORDER BY last_message_time DESC",
-            (me, me),
+            f"SELECT * FROM chats WHERE u1 IN ({marks}) OR u2 IN ({marks}) "
+            "ORDER BY last_message_time DESC",
+            (*me, *me),
         ).fetchall()
         result = []
         for r in rows:
-            other = r["u2"] if r["u1"] == me else r["u1"]
+            other = r["u2"] if r["u1"] in me else r["u1"]
             other_user = get_user_by_uid(other)
             result.append(
                 {
@@ -365,7 +429,7 @@ def profile_get_message_metadata(jwt):
 @app.route("/profile/SetFmcToken", methods=["POST"])
 @require_jwt
 def profile_set_fmc_token():
-    user = get_user_by_jwt(create_if_missing=True)
+    user = current_user()
     data = request.get_json(silent=True) or {}
     fmc = data.get("Fmc", "")
     conn = get_db()
@@ -391,13 +455,11 @@ def profile_get():
 @app.route("/profile/upload", methods=["POST"])
 @require_jwt
 def profile_upload():
-    user = get_user_by_jwt(create_if_missing=True)
+    user = current_user()
     if "image" not in request.files:
         return jsonify({"error": "no image"}), 400
     file = request.files["image"]
-    ext = file.filename.rsplit(".", 1)[-1] if file.filename and "." in file.filename else "jpg"
-    fname = f"profile_{user['id']}_{uuid.uuid4().hex[:8]}.{ext}"
-    fpath = os.path.join(UPLOAD_FOLDER, fname)
+    fpath = upload_path(f"profile_{user['id']}", file.filename, "jpg")
     file.save(fpath)
     conn = get_db()
     try:
@@ -435,7 +497,7 @@ def contact_get():
 @app.route("/UpdateProfile", methods=["POST"])
 @require_jwt
 def update_profile():
-    user = get_user_by_jwt(create_if_missing=True)
+    user = current_user()
     data_raw = request.form.get("data")
     data = json.loads(data_raw) if data_raw else {}
 
@@ -452,13 +514,7 @@ def update_profile():
         fields["status"] = status
     if has_image and "image" in request.files:
         file = request.files["image"]
-        ext = (
-            file.filename.rsplit(".", 1)[-1]
-            if file.filename and "." in file.filename
-            else "jpg"
-        )
-        fname = f"profile_{user['id']}_{uuid.uuid4().hex[:8]}.{ext}"
-        fpath = os.path.join(UPLOAD_FOLDER, fname)
+        fpath = upload_path(f"profile_{user['id']}", file.filename, "jpg")
         file.save(fpath)
         fields["profile_image_path"] = fpath
 
@@ -479,10 +535,7 @@ def update_profile():
 @app.route("/GetChatFromUid/uid=<uid>", methods=["GET"])
 @require_jwt
 def get_chat_from_uid(uid):
-    user = get_user_by_jwt(create_if_missing=True)
-    me = user["id"]
-    me_firebase = user["firebase_uid"]
-    me_ids = {x for x in (me, me_firebase) if x}
+    me_ids = caller_ids()
     conn = get_db()
     try:
         rows = conn.execute(
@@ -525,6 +578,9 @@ def get_message_formid():
     chat_id = data.get("id", "")
     conn = get_db()
     try:
+        _, error = load_own_chat(conn, chat_id)
+        if error:
+            return error
         messages = conn.execute(
             "SELECT * FROM messages WHERE chat_id = ? ORDER BY message_time ASC",
             (chat_id,),
@@ -550,16 +606,17 @@ def get_message_formid():
 @app.route("/StartMessagingWithNewContact", methods=["POST"])
 @require_jwt
 def start_messaging_with_new_contact():
-    user = get_user_by_jwt(create_if_missing=True)
+    user = current_user()
     data = request.get_json(silent=True) or {}
     contact_uid = data.get("contactUid", "")
-    self_uid = data.get("selfUid", user["id"])
     ismedia = data.get("ismedia", False)
     message_text = data.get("messageText", "")
+    if not isinstance(contact_uid, str) or not contact_uid:
+        return jsonify({"error": "missing contactUid"}), 400
 
-    me = user["id"]
-    # Use selfUid if provided (frontend sends firebase uid), else internal id
-    participant_self = self_uid or me
+    # The caller is always the verified token's uid; any client-sent
+    # selfUid is ignored.
+    participant_self = g.uid
 
     chat_id = str(uuid.uuid4())
     now = int(datetime.utcnow().timestamp() * 1000)
@@ -569,13 +626,8 @@ def start_messaging_with_new_contact():
     if other:
         n2 = other["name"] or ""
 
-    # Remember the jwt user's firebase uid so GetChatFromUid can match chats
     conn = get_db()
     try:
-        if self_uid:
-            conn.execute(
-                "UPDATE users SET firebase_uid = ? WHERE id = ?", (self_uid, me)
-            )
         conn.execute(
             "INSERT INTO chats (chat_id, u1, u2, n1, n2, last_message_time, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -604,21 +656,16 @@ def start_messaging_with_new_contact():
 def post_message_to_id():
     data = request.get_json(silent=True) or {}
     chat_id = data.get("id", "")
-    sender = data.get("Sender", "")
+    sender = g.uid  # never the client-sent "Sender"
     message_time = data.get("messageTime", int(datetime.utcnow().timestamp() * 1000))
     message_text = data.get("MessageText", "")
     is_media = 1 if data.get("isMedia", False) else 0
 
     conn = get_db()
     try:
-        chat = conn.execute("SELECT * FROM chats WHERE chat_id = ?", (chat_id,)).fetchone()
-        if chat is None:
-            # create the chat on the fly
-            conn.execute(
-                "INSERT INTO chats (chat_id, u1, u2, n1, n2, last_message_time, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (chat_id, sender, "", "", "", message_time, datetime.utcnow().isoformat()),
-            )
+        _, error = load_own_chat(conn, chat_id)
+        if error:
+            return error
         msg_id = str(uuid.uuid4())
         conn.execute(
             "INSERT INTO messages (id, chat_id, sender, message_time, message_text, is_media) "
@@ -653,27 +700,22 @@ def _post_media_to_id(field_name, media_type):
     data_raw = request.form.get("data")
     data = json.loads(data_raw) if data_raw else {}
     chat_id = data.get("id", "")
-    sender = data.get("Sender", "")
+    sender = g.uid  # never the client-sent "Sender"
     message_time = data.get("messageTime", int(datetime.utcnow().timestamp() * 1000))
     message_text = data.get("MessageText", "")
 
     if field_name not in request.files:
         return jsonify({"error": "no media file"}), 400
     file = request.files[field_name]
-    ext = file.filename.rsplit(".", 1)[-1] if file.filename and "." in file.filename else "bin"
-    fname = f"msg_{chat_id}_{uuid.uuid4().hex[:8]}.{ext}"
-    fpath = os.path.join(UPLOAD_FOLDER, fname)
-    file.save(fpath)
 
     conn = get_db()
     try:
-        chat = conn.execute("SELECT * FROM chats WHERE chat_id = ?", (chat_id,)).fetchone()
-        if chat is None:
-            conn.execute(
-                "INSERT INTO chats (chat_id, u1, u2, n1, n2, last_message_time, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (chat_id, sender, "", "", "", message_time, datetime.utcnow().isoformat()),
-            )
+        # Check the chat before anything is written to disk.
+        _, error = load_own_chat(conn, chat_id)
+        if error:
+            return error
+        fpath = upload_path("msg", file.filename, "bin")
+        file.save(fpath)
         msg_id = str(uuid.uuid4())
         conn.execute(
             "INSERT INTO messages (id, chat_id, sender, message_time, message_text, is_media, media_type, media_path) "
@@ -721,9 +763,9 @@ def _message_media(default_mimetype, thumb=False):
 
     conn = get_db()
     try:
-        chat = conn.execute("SELECT * FROM chats WHERE chat_id = ?", (message_id,)).fetchone()
-        if chat is None:
-            return serve_file_or_placeholder(None, default_mimetype)
+        _, error = load_own_chat(conn, message_id)
+        if error:
+            return error
         messages = conn.execute(
             "SELECT * FROM messages WHERE chat_id = ? ORDER BY message_time ASC",
             (message_id,),
@@ -746,4 +788,6 @@ def _message_media(default_mimetype, thumb=False):
 # Run
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True, threaded=True)
+    # The Werkzeug debugger runs arbitrary code; only enable it in insecure
+    # dev mode, never on 0.0.0.0 with real auth.
+    app.run(host="0.0.0.0", port=5000, debug=not FIREBASE_AUTH_ENABLED, threaded=True)
